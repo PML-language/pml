@@ -272,6 +272,8 @@ let print_t_node : out_channel -> t_node -> unit = fun ch n ->
 type pool =
   { vs       : (VPtr.t * v_node) list
   ; ts       : (TPtr.t * t_node) list
+  ; cvs      : (VPtr.t * v_node) list (* as above, but only node with no children *)
+  ; cts      : (TPtr.t * t_node) list (* as above, but only node with no children *)
   ; os       : (Ptr.t * t ex loc) list
   ; next     : int    (** counter to generate new nodes *)
   ; time     : Timed.Time.t (** Current time for references *)
@@ -362,6 +364,8 @@ let print_pool : string -> out_channel -> pool -> unit = fun prefix ch po ->
 let empty_pool : unit -> pool = fun () ->
   { vs     = []
   ; ts     = []
+  ; cvs    = []
+  ; cts    = []
   ; os     = []
   ; next   = 0
   ; time   = Timed.Time.save ()
@@ -665,7 +669,7 @@ let insert_v_node : v_node -> pool -> VPtr.t * pool = fun nn po ->
     match children with
     | [] ->
        let fn (p, n) = if eq_v_nodes po n nn then raise (FoundV (p,po)) in
-       List.iter fn po.vs; raise Not_found
+       List.iter fn po.cvs; raise Not_found
     | (k,n)::l ->
        let f k n = MapKey.find k (parents n po) in
        let possible =
@@ -690,8 +694,9 @@ let insert_v_node : v_node -> pool -> VPtr.t * pool = fun nn po ->
                ; bs   = Timed.tref (immediate_nobox nn)
                ; vval = DP(V_Node, nn); vas = [] } in
      let vs = (ptr,nn) :: po.vs in
+     let cvs = if children = [] then (ptr,nn) :: po.cvs else po.cvs in
      let next = po.next + 1 in
-     let po = { po with vs ; next } in
+     let po = { po with vs ; cvs; next } in
      let po = add_parent_v_nodes ptr children po in
      (ptr, po)
 
@@ -705,7 +710,7 @@ let insert_t_node : bool -> t_node -> pool -> TPtr.t * pool =
       match children with
       | [] ->
          let fn (p, n) = if eq_t_nodes po n nn then raise (FoundT (p,po)) in
-         List.iter fn po.ts; raise Not_found
+         List.iter fn po.cts; raise Not_found
       | (k,n)::l ->
          let f k n = MapKey.find k (parents n po) in
          let possible =
@@ -744,6 +749,7 @@ let insert_t_node : bool -> t_node -> pool -> TPtr.t * pool =
                  ; tval = DP(T_Node, nn)
                  ; tas  = [] } in
        let ts = (ptr, nn) :: po.ts in
+       let cts = if children = [] then (ptr, nn) :: po.cts else po.cts in
        let time, eq_map =
          match nn with
          | TN_Valu(pv) -> let tp = Ptr.T_ptr ptr and vp = Ptr.V_ptr pv in
@@ -752,7 +758,7 @@ let insert_t_node : bool -> t_node -> pool -> TPtr.t * pool =
          | _           -> (po.time, po.eq_map)
        in
        let next= po.next + 1 in
-       let po = { po with time; ts ; next; eq_map } in
+       let po = { po with time; ts ; cts; next; eq_map } in
        let po = add_parent_t_nodes ptr children po in
        (ptr, po)
 
